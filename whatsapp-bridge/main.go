@@ -975,11 +975,25 @@ func main() {
 			return
 		}
 
+		// Pair via phone number code instead of QR when PAIR_PHONE is set
+		// (e.g. PAIR_PHONE=972501234567 ./whatsapp-bridge)
+		pairPhone := os.Getenv("PAIR_PHONE")
+		if pairPhone != "" {
+			pairCode, perr := client.PairPhone(context.Background(), pairPhone, true, whatsmeow.PairClientChrome, "Chrome (macOS)")
+			if perr != nil {
+				logger.Errorf("Failed to request pairing code: %v", perr)
+				return
+			}
+			fmt.Printf("\nEnter this code in WhatsApp (Settings > Linked Devices > Link a Device > Link with phone number instead): %s\n", pairCode)
+		}
+
 		// Print QR code for pairing with phone
 		for evt := range qrChan {
 			if evt.Event == "code" {
-				fmt.Println("\nScan this QR code with your WhatsApp app:")
-				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+				if pairPhone == "" {
+					fmt.Println("\nScan this QR code with your WhatsApp app:")
+					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+				}
 			} else if evt.Event == "success" {
 				connected <- true
 				break
@@ -990,8 +1004,8 @@ func main() {
 		select {
 		case <-connected:
 			fmt.Println("\nSuccessfully connected and authenticated!")
-		case <-time.After(3 * time.Minute):
-			logger.Errorf("Timeout waiting for QR code scan")
+		case <-time.After(10 * time.Minute):
+			logger.Errorf("Timeout waiting for pairing")
 			return
 		}
 	} else {
