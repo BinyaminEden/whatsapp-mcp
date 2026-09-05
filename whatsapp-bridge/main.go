@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"context"
 	"database/sql"
 	"encoding/binary"
@@ -821,6 +822,25 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 		})
 	})
 
+	// Handler for listing joined groups (live from WhatsApp, independent of message sync)
+	http.HandleFunc("/api/groups", func(w http.ResponseWriter, r *http.Request) {
+		groups, err := client.GetJoinedGroups(r.Context())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get joined groups: %v", err), http.StatusInternalServerError)
+			return
+		}
+		type groupInfo struct {
+			JID  string `json:"jid"`
+			Name string `json:"name"`
+		}
+		result := make([]groupInfo, 0, len(groups))
+		for _, g := range groups {
+			result = append(result, groupInfo{JID: g.JID.String(), Name: g.Name})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	})
+
 	// Handler for downloading media
 	http.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
 		// Only allow POST requests
@@ -1029,7 +1049,14 @@ func main() {
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
 
 	// Start REST API server
-	startRESTServer(client, messageStore, 8080)
+	// PORT env var lets a second bridge instance (another WhatsApp account) run side by side.
+	port := 8080
+	if p := os.Getenv("PORT"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil {
+			port = n
+		}
+	}
+	startRESTServer(client, messageStore, port)
 
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)
